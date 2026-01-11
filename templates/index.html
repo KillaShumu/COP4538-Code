@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }} - Contact Manager</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .card { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}Contact Manager</h1>
+    
+    <div style="background-color: #f0f0f0; padding: 15px;">
+        <h3>Add New Contact</h3>
+        <form action="/add" method="POST">
+            <input type="text" name="name" placeholder="Name" required>
+            <input type="email" name="email" placeholder="Email" required>
+            <button type="submit">Add to Data Structure</button>
+        </form>
+    </div>
+    <hr>
+    <h3>Current Contacts (In-Memory)</h3>
+    {% for contact in contacts %}
+        <div class="card">
+            <strong>{{ contact.name }}</strong> - {{ contact.email }}
+        </div>
+    {% else %}
+        <p>No contacts found.</p>
+    {% endfor %}
+</body>
+</html>
