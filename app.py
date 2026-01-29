@@ -1,5 +1,19 @@
 from flask import Flask, render_template, request, redirect, url_for
 import os
+import time
+
+N = 1000000 #we will change this value later in the project
+
+start_time = time.time()
+
+#core logic
+for i in range(N):
+    pass #a simple operation
+
+end_time = time.time()
+elasped_time = end_time - start_time
+print(f"Loop of {N} iterations took {elasped_time} seconds.")
+
 
 app = Flask(__name__)
 
@@ -13,6 +27,9 @@ contacts = []
 
 @app.route('/')
 def index():
+    #change the FLASK HTML title to my name 
+    app.config['FLASK_TITLE'] = "Mohammed Haider "
+
     """
     Displays the main page.
     Eventually, students will pass their Linked List or Tree data here.
@@ -32,7 +49,6 @@ def add_contact():
     
     # Phase 1 Logic: Append to list
     contacts.append({'name': name, 'email': email})
-    
     return redirect(url_for('index'))
 
 # --- DATABASE CONNECTIVITY (For later phases) ---
