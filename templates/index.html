@@ -9,7 +9,17 @@
 </head>
 <body>
     <h1>{{ title }}Contact Manager</h1>
-    
+
+    {% if last_deleted %}
+    <div style="background:#fff3cd;border:1px solid #ffeeba;padding:10px;margin:12px 0;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
+        <div>Deleted <strong>{{ last_deleted.name }}</strong>. <small style="color:#6b4f00;">(undo available)</small></div>
+        <form method="post" action="{{ url_for('undo') }}" style="margin:0;">
+            <input type="hidden" name="next" value="{{ url_for('index') }}">
+            <button type="submit" style="background:#007bff;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Undo</button>
+        </form>
+    </div>
+    {% endif %}
+
     <div style="background-color: #f0f0f0; padding: 15px;">
         <h3>Search Contacts</h3>
         <form action="/search" method="GET">
@@ -28,8 +38,12 @@
     <hr>
     <h3>Current Contacts (In-Memory)</h3>
     {% for contact in contacts %}
-        <div class="card">
-            <strong>{{ contact }}</strong>
+        <div class="card" style="display:flex; align-items:center; justify-content:space-between;">
+            <strong style="margin-right:12px;">{{ contact }}</strong>
+            <form action="{{ url_for('delete_contact', idx=loop.index0) }}" method="post" style="margin:0;">
+                <input type="hidden" name="next" value="{{ url_for('index') }}">
+                <button type="submit" onclick="return confirm('Delete {{ contact }}?')" style="background:#dc3545;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Delete</button>
+            </form>
         </div>
     {% else %}
         <p>No contacts found.</p>
