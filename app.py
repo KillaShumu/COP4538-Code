@@ -27,6 +27,116 @@ app = Flask(__name__)
 app.config['FLASK_TITLE'] = ""
 
 
+class Stack:
+    """A stack data structure (LIFO) for storing undo operations."""
+    def __init__(self):
+        self.items = []
+
+    def push(self, item):
+        """Add an item to the top of the stack."""
+        self.items.append(item)
+
+    def pop(self):
+        """Remove and return the top item from the stack."""
+        if not self.is_empty():
+            return self.items.pop()
+        return None
+
+    def peek(self):
+        """View the top item without removing it."""
+        if not self.is_empty():
+            return self.items[-1]
+        return None
+
+    def is_empty(self):
+        """Check if stack is empty."""
+        return len(self.items) == 0
+
+    def size(self):
+        """Return the number of items in the stack."""
+        return len(self.items)
+
+
+class Queue:
+    """A queue data structure (FIFO) for storing redo operations."""
+    def __init__(self):
+        self.items = []
+
+    def enqueue(self, item):
+        """Add an item to the back of the queue."""
+        self.items.append(item)
+
+    def dequeue(self):
+        """Remove and return the front item from the queue."""
+        if not self.is_empty():
+            return self.items.pop(0)
+        return None
+
+    def peek(self):
+        """View the front item without removing it."""
+        if not self.is_empty():
+            return self.items[0]
+        return None
+
+    def is_empty(self):
+        """Check if queue is empty."""
+        return len(self.items) == 0
+
+    def size(self):
+        """Return the number of items in the queue."""
+        return len(self.items)
+
+    def clear(self):
+        """Clear all items from the queue."""
+        self.items = []
+
+
+class ContactHashTable:
+    """A hash table (dictionary-based) for O(1) contact lookup by name."""
+    def __init__(self):
+        self.table = {}  # key: lowercase name, value: list of positions/names
+
+    def add(self, name):
+        """Add a contact to the hash table for quick lookup."""
+        key = name.lower()
+        if key not in self.table:
+            self.table[key] = []
+        self.table[key].append(name)
+
+    def remove(self, name):
+        """Remove a contact from the hash table."""
+        key = name.lower()
+        if key in self.table and name in self.table[key]:
+            self.table[key].remove(name)
+            if not self.table[key]:
+                del self.table[key]
+
+    def search(self, query):
+        """Search for contacts matching the query (case-insensitive) - O(1) lookup."""
+        key = query.lower()
+        if key in self.table:
+            return self.table[key]
+        return []
+
+    def clear(self):
+        """Clear all entries from the hash table."""
+        self.table = {}
+
+
+class ContactOperation:
+    """Represents an operation (add or delete) for undo/redo tracking."""
+    def __init__(self, operation_type, name, index):
+        """
+        operation_type: 'add' or 'delete'
+        name: contact name
+        index: position in the LinkedList
+        """
+        self.operation_type = operation_type
+        self.name = name
+        self.index = index
+        self.timestamp = time.time()
+
+
 class LinkedList:
     """A minimal singly-linked list with list-like API used for the demo.
     Supports: append, insert, pop, __len__, __iter__, __getitem__.
@@ -117,7 +227,15 @@ class LinkedList:
 # replace plain Python list with a LinkedList instance so existing
 # code (append/insert/pop/len/iteration) continues to work
 contacts = LinkedList(["Alice", "Bob", "Charlie", "David", "Eve"])
-last_deleted = None  # single-level undo: dict with keys ('name','idx','time') or None
+contact_hash_table = ContactHashTable()
+
+# Initialize hash table with existing contacts
+for contact in contacts:
+    contact_hash_table.add(contact)
+
+# Undo/Redo stacks and queues
+undo_stack = Stack()
+redo_queue = Queue()
 
 
 @app.route('/')
@@ -127,19 +245,32 @@ def index():
     return render_template('index.html', 
                          contacts=contacts, 
                          title=app.config['FLASK_TITLE'],
-                         last_deleted=last_deleted)
+                         undo_available=not undo_stack.is_empty(),
+                         redo_available=not redo_queue.is_empty())
 
 @app.route('/add', methods=['POST'])
 def add_contact():
     """
     Endpoint to add a new contact.
-    Students will update this to insert into their Data Structure.
+    Records the operation in the undo stack and adds to LinkedList and hash table.
+    Clears the redo queue when a new operation is performed.
     """
     name = request.form.get('name')
     
-    # Phase 1 Logic: Append to list
     if name:
+        # Record the operation for undo
+        operation = ContactOperation('add', name, len(contacts))
+        undo_stack.push(operation)
+        
+        # Clear redo queue when new operation is performed
+        redo_queue.clear()
+        
+        # Add to LinkedList
         contacts.append(name)
+        
+        # Add to hash table for O(1) lookup
+        contact_hash_table.add(name)
+    
     return redirect(url_for('index'))
 
 
@@ -151,75 +282,147 @@ def contacts_page():
     if request.method == 'POST':
         name = request.form.get('name')
         if name:
+            operation = ContactOperation('add', name, len(contacts))
+            undo_stack.push(operation)
+            redo_queue.clear()
             contacts.append(name)
+            contact_hash_table.add(name)
         return redirect(url_for('contacts_page'))
     
-    return render_template('contacts.html', contacts=contacts, last_deleted=last_deleted)
+    return render_template('contacts.html', contacts=contacts,
+                         undo_available=not undo_stack.is_empty(),
+                         redo_available=not redo_queue.is_empty())
 
 @app.route('/search')
 def search():
     """
-    Search for contacts by name.
+    Search for contacts by name using hash table for O(1) lookup.
     Returns contacts that match the search query (case-insensitive).
 
     The results are returned as (index, contact) pairs so the UI can
     perform index-based deletion on the in-memory list.
+    
+    Hash table provides O(1) average-case lookup time instead of O(n) linear search.
     """
     raw_query = request.args.get('q', '')
     query = raw_query.lower()
     
-    if not query:
-        search_results = []
-    else:
-        # return (index, contact) so the template can delete the exact item
-        search_results = [(i, contact) for i, contact in enumerate(contacts) if query in contact.lower()]
+    search_results = []
+    if query:
+        # Use hash table for O(1) lookup
+        matching_contacts = contact_hash_table.search(raw_query)
+        # Convert to (index, contact) pairs by finding indices in the LinkedList
+        for contact in matching_contacts:
+            for i, c in enumerate(contacts):
+                if c == contact:
+                    search_results.append((i, c))
+                    break
     
     return render_template('search_results.html', 
                          query=raw_query,
                          results=search_results,
                          result_count=len(search_results),
-                         last_deleted=last_deleted)
+                         undo_available=not undo_stack.is_empty(),
+                         redo_available=not redo_queue.is_empty())
 
 
 @app.route('/delete/<int:idx>', methods=['POST'])
 def delete_contact(idx):
     """
-    Remove a contact from the in-memory list by index and record it for a
-    single-level undo. Accepts an optional 'next' URL to redirect after deletion.
+    Remove a contact from the in-memory list by index and record it for undo.
+    Records the deletion in the undo stack and removes from hash table.
     """
-    global last_deleted
     try:
         name = contacts[idx]
-        # record before removing so we can restore to the same position
-        last_deleted = { 'name': name, 'idx': idx, 'time': time.time() }
+        
+        # Record the operation for undo
+        operation = ContactOperation('delete', name, idx)
+        undo_stack.push(operation)
+        
+        # Clear redo queue when new operation is performed
+        redo_queue.clear()
+        
+        # Remove from LinkedList
         contacts.pop(idx)
+        
+        # Remove from hash table
+        contact_hash_table.remove(name)
     except Exception:
-        # invalid index or other race — clear undo state to avoid confusion
-        last_deleted = None
+        pass
 
-    # Prefer form 'next' (from POST), then querystring 'next', otherwise go home
     next_url = request.form.get('next') or request.args.get('next') or url_for('index')
     return redirect(next_url)
 
 
 @app.route('/undo', methods=['POST'])
 def undo():
-    """Restore the last deleted contact (single-level undo)."""
-    global last_deleted
+    """
+    Undo the last operation (add or delete) using the undo stack.
+    Moves the undone operation to the redo queue for potential redo.
+    """
     # Prefer form 'next' (from POST), then querystring 'next', otherwise go home
     next_url = request.form.get('next') or request.args.get('next') or url_for('index')
 
-    if not last_deleted:
+    if undo_stack.is_empty():
         return redirect(next_url)
 
-    # restore at the original index (or append if index is out of range)
-    name = last_deleted.get('name')
-    idx = last_deleted.get('idx', len(contacts))
-    insert_at = min(max(0, idx), len(contacts))
-    contacts.insert(insert_at, name)
+    operation = undo_stack.pop()
+    
+    if operation.operation_type == 'add':
+        # Undo an add: remove the contact
+        try:
+            contacts.pop(operation.index)
+            contact_hash_table.remove(operation.name)
+        except Exception:
+            pass
+    elif operation.operation_type == 'delete':
+        # Undo a delete: restore the contact
+        try:
+            insert_at = min(max(0, operation.index), len(contacts))
+            contacts.insert(insert_at, operation.name)
+            contact_hash_table.add(operation.name)
+        except Exception:
+            pass
+    
+    # Move to redo queue for potential redo
+    redo_queue.enqueue(operation)
+    
+    return redirect(next_url)
 
-    # clear undo buffer
-    last_deleted = None
+
+@app.route('/redo', methods=['POST'])
+def redo():
+    """
+    Redo the last undone operation (add or delete) using the redo queue.
+    Moves the redone operation back to the undo stack.
+    """
+    # Prefer form 'next' (from POST), then querystring 'next', otherwise go home
+    next_url = request.form.get('next') or request.args.get('next') or url_for('index')
+
+    if redo_queue.is_empty():
+        return redirect(next_url)
+
+    operation = redo_queue.dequeue()
+    
+    if operation.operation_type == 'add':
+        # Redo an add: restore the contact
+        try:
+            insert_at = min(max(0, operation.index), len(contacts))
+            contacts.insert(insert_at, operation.name)
+            contact_hash_table.add(operation.name)
+        except Exception:
+            pass
+    elif operation.operation_type == 'delete':
+        # Redo a delete: remove the contact again
+        try:
+            contacts.pop(operation.index)
+            contact_hash_table.remove(operation.name)
+        except Exception:
+            pass
+    
+    # Move back to undo stack
+    undo_stack.push(operation)
+    
     return redirect(next_url)
 
 

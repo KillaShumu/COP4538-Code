@@ -3,64 +3,172 @@
 <head>
     <title>Search Results - Contact Manager</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .card { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; }
-        .search-box { background-color: #f0f0f0; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
-        .results-info { color: #666; margin-bottom: 15px; }
-        .back-link { margin-bottom: 20px; }
-        a { color: #007bff; text-decoration: none; }
+        body { 
+            font-family: sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        .back-link { 
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+        a { 
+            color: #007bff; 
+            text-decoration: none;
+            font-weight: 500;
+        }
         a:hover { text-decoration: underline; }
-        button { background-color: #007bff; color: white; padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0056b3; }
+        .controls-section {
+            background-color: #e3f2fd; 
+            border: 1px solid #90caf9; 
+            padding: 20px; 
+            margin-bottom: 20px; 
+            border-radius: 6px;
+        }
+        .controls-section h3 { margin-top: 0; color: #1976d2; }
+        .search-box { 
+            background: white; 
+            padding: 20px; 
+            margin-bottom: 20px; 
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .results-info { 
+            color: #666; 
+            margin-bottom: 20px;
+            padding: 12px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .button-group { 
+            display: flex; 
+            gap: 10px; 
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+        button:hover:not(:disabled) { opacity: 0.9; }
+        button:disabled { 
+            opacity: 0.5; 
+            cursor: not-allowed; 
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-primary:hover:not(:disabled) { background: #0056b3; }
+        .btn-success:hover:not(:disabled) { background: #218838; }
+        .btn-danger:hover:not(:disabled) { background: #c82333; }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .card { 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            margin-bottom: 10px;
+            border-radius: 4px;
+            background: white;
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card strong { margin-right: 12px; flex: 1; }
+        .results-list { max-height: 500px; overflow-y: auto; }
+        .empty-state { 
+            color: #999; 
+            padding: 30px; 
+            text-align: center;
+            background: white;
+            border-radius: 4px;
+        }
+        form { margin: 0; }
     </style>
 </head>
 <body>
     <div class="back-link">
-        <a href="/">&larr; Back to Home</a>
+        <a href="/">← Back to Home</a>
     </div>
 
-    <h1>Contact Manager - Search</h1>
+    <h1>🔍 Search Results</h1>
 
-    {% if last_deleted %}
-    <div style="background:#fff3cd;border:1px solid #ffeeba;padding:10px;margin:12px 0;border-radius:6px;display:flex;align-items:center;justify-content:space-between;">
-        <div>Deleted <strong>{{ last_deleted.name }}</strong>. <small style="color:#6b4f00;">(undo available)</small></div>
-        <form method="post" action="{{ url_for('undo') }}" style="margin:0;">
-            <input type="hidden" name="next" value="{{ url_for('search') }}?q={{ query }}">
-            <button type="submit" style="background:#007bff;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Undo</button>
-        </form>
+    <!-- Undo/Redo Controls -->
+    <div class="controls-section">
+        <h3>Undo/Redo Controls</h3>
+        <div class="button-group">
+            <form method="post" action="{{ url_for('undo') }}" style="margin: 0;">
+                <input type="hidden" name="next" value="{{ url_for('search') }}{% if query %}?q={{ query }}{% endif %}">
+                <button type="submit" class="btn-primary" {% if not undo_available %}disabled{% endif %}>
+                    ↶ Undo
+                </button>
+            </form>
+            <form method="post" action="{{ url_for('redo') }}" style="margin: 0;">
+                <input type="hidden" name="next" value="{{ url_for('search') }}{% if query %}?q={{ query }}{% endif %}">
+                <button type="submit" class="btn-success" {% if not redo_available %}disabled{% endif %}>
+                    ↷ Redo
+                </button>
+            </form>
+        </div>
     </div>
-    {% endif %}
 
+    <!-- Search Section -->
     <div class="search-box">
-        <h3>Search Contacts</h3>
-        <form action="/search" method="GET">
+        <h3 style="margin-top: 0;">Search Contacts</h3>
+        <form action="/search" method="GET" class="input-group">
             <input type="text" name="q" placeholder="Search by name..." value="{{ query }}" required>
-            <button type="submit">Search</button>
+            <button type="submit" class="btn-primary">Search</button>
         </form>
     </div>
 
     {% if query %}
         <div class="results-info">
-            <p><strong>Search Results for "{{ query }}":</strong> {{ result_count }} contact(s) found</p>
+            <strong>Results for "{{ query }}":</strong> {{ result_count }} contact(s) found
         </div>
 
         {% if results %}
-            <div style="margin-top: 20px;">
+            <div class="results-list">
                 {% for idx, result in results %}
-                    <div class="card" style="display:flex; align-items:center; justify-content:space-between;">
-                        <strong style="margin-right:12px;">{{ result }}</strong>
-                        <form action="{{ url_for('delete_contact', idx=idx) }}" method="post" style="margin:0;">
+                    <div class="card">
+                        <strong>{{ result }}</strong>
+                        <form action="{{ url_for('delete_contact', idx=idx) }}" method="post">
                             <input type="hidden" name="next" value="{{ url_for('search') }}?q={{ query }}">
-                            <button type="submit" onclick="return confirm('Delete {{ result }}?')" style="background:#dc3545;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;">Delete</button>
+                            <button type="submit" class="btn-danger" onclick="return confirm('Delete {{ result }}?')">
+                                Delete
+                            </button>
                         </form>
                     </div>
                 {% endfor %}
             </div>
         {% else %}
-            <p style="color: #999;">No contacts match your search. Try a different search term.</p>
+            <div class="empty-state">
+                <p>No contacts match your search.</p>
+                <p style="color: #ccc; font-size: 12px;">Try a different search term.</p>
+            </div>
         {% endif %}
     {% else %}
-        <p style="color: #999;">Enter a search term to find contacts.</p>
+        <div class="empty-state">
+            <p>Enter a search term above to find contacts.</p>
+        </div>
     {% endif %}
 </body>
 </html>
