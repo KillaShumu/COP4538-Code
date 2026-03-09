@@ -92,7 +92,13 @@ class Queue:
 
 
 class ContactHashTable:
-    """A hash table (dictionary-based) for O(1) contact lookup by name."""
+    """A hash table (dictionary-based) for O(1) contact lookup by name.
+
+    NOTE: this structure remains in the codebase for demonstration purposes
+    but the search endpoint has been updated to rely on quick sort and a
+    simple linear scan instead of O(1) hashing.  It is no longer used by
+    the search route itself.
+    """
     def __init__(self):
         self.table = {}  # key: lowercase name, value: list of positions/names
 
@@ -224,6 +230,61 @@ class LinkedList:
         return list(iter(self))
 
 
+def quick_sort(arr, key=lambda x: x):
+    """Return a new list that is a quick-sorted version of *arr*.
+
+    The `key` function is applied to each element for comparisons (similar to
+    the built-in ``sorted``).  This implementation is recursive and uses the
+    pivot-at-middle strategy. It produces a new list, leaving *arr* unmodified.
+    """
+    if len(arr) <= 1:
+        return arr[:]
+    pivot = arr[len(arr) // 2]
+    pivot_key = key(pivot)
+    left = [x for x in arr if key(x) < pivot_key]
+    middle = [x for x in arr if key(x) == pivot_key]
+    right = [x for x in arr if key(x) > pivot_key]
+    return quick_sort(left, key) + middle + quick_sort(right, key)
+
+
+def find_contact_by_id(contact_id, sorted_contacts):
+    """Perform binary search to find a contact by ID (index) in a sorted list.
+    
+    Args:
+        contact_id: The contact name to search for (performs case-insensitive comparison).
+        sorted_contacts: A sorted list of contact names.
+    
+    Returns:
+        A tuple (index, contact_name) if found, otherwise None.
+        The index refers to the position in the sorted list.
+    
+    Time Complexity: O(log n) where n is the number of contacts.
+    Space Complexity: O(1)
+    """
+    if not sorted_contacts:
+        return None
+    
+    left = 0
+    right = len(sorted_contacts) - 1
+    contact_id_lower = contact_id.lower()
+    
+    while left <= right:
+        mid = (left + right) // 2
+        mid_contact = sorted_contacts[mid]
+        mid_contact_lower = mid_contact.lower()
+        
+        # Compare case-insensitively
+        if mid_contact_lower == contact_id_lower:
+            return (mid, mid_contact)
+        elif mid_contact_lower < contact_id_lower:
+            left = mid + 1
+        else:
+            right = mid - 1
+    
+    # Contact not found
+    return None
+
+
 # replace plain Python list with a LinkedList instance so existing
 # code (append/insert/pop/len/iteration) continues to work
 contacts = LinkedList(["Alice", "Bob", "Charlie", "David", "Eve"])
@@ -296,28 +357,32 @@ def contacts_page():
 @app.route('/search')
 def search():
     """
-    Search for contacts by name using hash table for O(1) lookup.
-    Returns contacts that match the search query (case-insensitive).
+    Search for contacts by name.
 
-    The results are returned as (index, contact) pairs so the UI can
-    perform index-based deletion on the in-memory list.
-    
-    Hash table provides O(1) average-case lookup time instead of O(n) linear search.
+    The previous implementation relied on a hash table for constant-time
+    lookups.  In this version we perform a simple linear scan to collect
+    matches, then apply a quick sort to the result set before rendering.
+    This demonstrates the quick sort algorithm in the code base – the
+    hash table object still exists but is no longer used by this route.
+
+    Matches are treated case-insensitively and require exact name equality
+    (mirroring the behaviour of the original hash-based lookup).  The
+    ``search_results`` list contains ``(index, contact)`` pairs so that
+    the UI can still delete by the contact's position in the main list.
     """
     raw_query = request.args.get('q', '')
     query = raw_query.lower()
-    
+
     search_results = []
     if query:
-        # Use hash table for O(1) lookup
-        matching_contacts = contact_hash_table.search(raw_query)
-        # Convert to (index, contact) pairs by finding indices in the LinkedList
-        for contact in matching_contacts:
-            for i, c in enumerate(contacts):
-                if c == contact:
-                    search_results.append((i, c))
-                    break
-    
+        # perform linear scan over linked list
+        for i, c in enumerate(contacts):
+            if c.lower() == query:
+                search_results.append((i, c))
+        # sort the results by contact name using quick sort
+        if search_results:
+            search_results = quick_sort(search_results, key=lambda pair: pair[1].lower())
+
     return render_template('search_results.html', 
                          query=raw_query,
                          results=search_results,
