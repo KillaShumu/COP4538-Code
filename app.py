@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for
 import os
 import time
+import heapq
 
 #Configure SQLAlchemy connection string based on docker-compose environment variables
 
@@ -25,6 +26,178 @@ MSSQL_CONNECTION_STRING = f"mssql+pyodbc://{MSSQL_USER}:{MSSQL_PASSWORD}@{MSSQL_
 app = Flask(__name__)
 
 app.config['FLASK_TITLE'] = ""
+
+
+class Contact:
+    """Represents a contact with name, category path, and priority."""
+    def __init__(self, name, category_path=None, priority=0):
+        self.name = name
+        self.category_path = category_path or []  # list like ['Work', 'Engineering', 'Team A']
+        self.priority = priority  # higher number = higher priority for VIP
+
+    def get_category_string(self):
+        return ' -> '.join(self.category_path) if self.category_path else 'Uncategorized'
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return f"Contact({self.name}, {self.category_path}, {self.priority})"
+
+
+class TreeNode:
+    """Node in the category tree."""
+    def __init__(self, name):
+        self.name = name
+        self.children = {}  # dict of child_name -> TreeNode
+        self.contacts = []  # list of Contact objects at this level
+
+    def add_contact(self, contact):
+        """Add a contact to this node."""
+        self.contacts.append(contact)
+
+    def get_child(self, name):
+        """Get or create child node."""
+        if name not in self.children:
+            self.children[name] = TreeNode(name)
+        return self.children[name]
+
+    def get_all_contacts(self):
+        """Recursively get all contacts in this subtree."""
+        all_contacts = self.contacts[:]
+        for child in self.children.values():
+            all_contacts.extend(child.get_all_contacts())
+        return all_contacts
+
+
+class CategoryTree:
+    """Tree structure for organizing contacts by categories."""
+    def __init__(self):
+        self.root = TreeNode('Root')
+
+    def add_contact(self, contact):
+        """Add a contact to the tree based on its category path."""
+        current = self.root
+        for category in contact.category_path:
+            current = current.get_child(category)
+        current.add_contact(contact)
+
+    def get_contacts_by_category(self, category_path):
+        """Get contacts under a specific category path."""
+        current = self.root
+        try:
+            for category in category_path:
+                current = current.children[category]
+            return current.get_all_contacts()
+        except KeyError:
+            return []
+
+    def get_all_contacts(self):
+        """Get all contacts in the tree."""
+        return self.root.get_all_contacts()
+
+    def remove_contact(self, contact):
+        """Remove a contact from the tree."""
+        current = self.root
+        for category in contact.category_path:
+            if category not in current.children:
+                return False
+            current = current.children[category]
+        if contact in current.contacts:
+            current.contacts.remove(contact)
+            return True
+        return False
+
+
+class BSTNode:
+    """Node in Binary Search Tree."""
+    def __init__(self, key, value):
+        self.key = key  # category path as tuple
+        self.value = value  # list of contacts or TreeNode
+        self.left = None
+        self.right = None
+
+
+class CategoryBST:
+    """Binary Search Tree for fast category retrieval."""
+    def __init__(self):
+        self.root = None
+
+    def _insert(self, node, key, value):
+        if node is None:
+            return BSTNode(key, value)
+        if key < node.key:
+            node.left = self._insert(node.left, key, value)
+        elif key > node.key:
+            node.right = self._insert(node.right, key, value)
+        else:
+            # Update existing
+            node.value = value
+        return node
+
+    def insert(self, key, value):
+        """Insert or update a category."""
+        self.root = self._insert(self.root, key, value)
+
+    def _search(self, node, key):
+        if node is None or node.key == key:
+            return node
+        if key < node.key:
+            return self._search(node.left, key)
+        return self._search(node.right, key)
+
+    def search(self, key):
+        """Search for a category."""
+        node = self._search(self.root, key)
+        return node.value if node else None
+
+    def get_all_categories(self):
+        """Get all category keys in sorted order."""
+        result = []
+        self._inorder(self.root, result)
+        return result
+
+    def _inorder(self, node, result):
+        if node:
+            self._inorder(node.left, result)
+            result.append(node.key)
+            self._inorder(node.right, result)
+
+
+class PriorityQueue:
+    """Priority Queue using heapq for VIP contacts."""
+    def __init__(self):
+        self.heap = []  # list of (-priority, contact) for max-heap
+        self.entry_count = 0  # to handle duplicate priorities
+
+    def push(self, contact):
+        """Add contact to priority queue."""
+        heapq.heappush(self.heap, (-contact.priority, self.entry_count, contact))
+        self.entry_count += 1
+
+    def pop(self):
+        """Remove and return highest priority contact."""
+        if self.heap:
+            return heapq.heappop(self.heap)[2]
+        return None
+
+    def peek(self):
+        """Return highest priority contact without removing."""
+        if self.heap:
+            return self.heap[0][2]
+        return None
+
+    def is_empty(self):
+        return len(self.heap) == 0
+
+    def size(self):
+        return len(self.heap)
+
+    def get_top_contacts(self, n=5):
+        """Get top n contacts without removing them."""
+        # Create a sorted list from heap
+        sorted_contacts = sorted(self.heap, key=lambda x: x[0])  # sort by priority (already negative)
+        return [contact for _, _, contact in sorted_contacts[:n]]
 
 
 class Stack:
@@ -131,15 +304,13 @@ class ContactHashTable:
 
 class ContactOperation:
     """Represents an operation (add or delete) for undo/redo tracking."""
-    def __init__(self, operation_type, name, index):
+    def __init__(self, operation_type, contact):
         """
         operation_type: 'add' or 'delete'
-        name: contact name
-        index: position in the LinkedList
+        contact: Contact object
         """
         self.operation_type = operation_type
-        self.name = name
-        self.index = index
+        self.contact = contact
         self.timestamp = time.time()
 
 
@@ -285,14 +456,30 @@ def find_contact_by_id(contact_id, sorted_contacts):
     return None
 
 
-# replace plain Python list with a LinkedList instance so existing
-# code (append/insert/pop/len/iteration) continues to work
-contacts = LinkedList(["Alice", "Bob", "Charlie", "David", "Eve"])
-contact_hash_table = ContactHashTable()
+# Initialize data structures
+category_tree = CategoryTree()
+category_bst = CategoryBST()
+vip_queue = PriorityQueue()
 
-# Initialize hash table with existing contacts
-for contact in contacts:
-    contact_hash_table.add(contact)
+# Sample contacts with categories and priorities
+sample_contacts = [
+    Contact("Alice", ["Work", "Engineering"], 3),  # VIP
+    Contact("Bob", ["Work", "Sales"], 0),
+    Contact("Charlie", ["Personal", "Friends"], 0),
+    Contact("David", ["Work", "Engineering", "Team A"], 5),  # High VIP
+    Contact("Eve", ["Personal", "Family"], 0),
+    Contact("Frank", ["Work", "HR"], 2),  # VIP
+]
+
+# Add contacts to tree and BST
+for contact in sample_contacts:
+    category_tree.add_contact(contact)
+    category_bst.insert(tuple(contact.category_path), contact.category_path)
+    if contact.priority > 0:
+        vip_queue.push(contact)
+
+# For backward compatibility, create a list of all contacts
+contacts = category_tree.get_all_contacts()
 
 # Undo/Redo stacks and queues
 undo_stack = Stack()
@@ -303,8 +490,16 @@ redo_queue = Queue()
 def index():
     app.config['FLASK_TITLE'] = "Mohammed Haider "
 
-    return render_template('index.html', 
-                         contacts=contacts, 
+    # Get VIP contacts (top 5)
+    vip_contacts = vip_queue.get_top_contacts(5)
+
+    # Get tree display data
+    tree_data = get_tree_display_data(category_tree.root, contacts_list=contacts)
+
+    return render_template('index.html',
+                         contacts=contacts,
+                         tree_data=tree_data,
+                         vip_contacts=vip_contacts,
                          title=app.config['FLASK_TITLE'],
                          undo_available=not undo_stack.is_empty(),
                          redo_available=not redo_queue.is_empty())
@@ -313,25 +508,42 @@ def index():
 def add_contact():
     """
     Endpoint to add a new contact.
-    Records the operation in the undo stack and adds to LinkedList and hash table.
+    Records the operation in the undo stack and adds to tree, BST, and VIP queue.
     Clears the redo queue when a new operation is performed.
     """
+    global contacts
+
     name = request.form.get('name')
-    
+    category_str = request.form.get('category', '')
+    priority = int(request.form.get('priority', 0))
+
     if name:
+        # Parse category path
+        category_path = [cat.strip() for cat in category_str.split('->')] if category_str else []
+
+        # Create contact
+        contact = Contact(name, category_path, priority)
+
         # Record the operation for undo
-        operation = ContactOperation('add', name, len(contacts))
+        operation = ContactOperation('add', contact)
         undo_stack.push(operation)
-        
+
         # Clear redo queue when new operation is performed
         redo_queue.clear()
-        
-        # Add to LinkedList
-        contacts.append(name)
-        
-        # Add to hash table for O(1) lookup
-        contact_hash_table.add(name)
-    
+
+        # Add to tree
+        category_tree.add_contact(contact)
+
+        # Add to BST
+        category_bst.insert(tuple(category_path), category_path)
+
+        # Add to VIP queue if priority > 0
+        if priority > 0:
+            vip_queue.push(contact)
+
+        # Update contacts list
+        contacts = category_tree.get_all_contacts()
+
     return redirect(url_for('index'))
 
 
@@ -359,31 +571,23 @@ def search():
     """
     Search for contacts by name.
 
-    The previous implementation relied on a hash table for constant-time
-    lookups.  In this version we perform a simple linear scan to collect
-    matches, then apply a quick sort to the result set before rendering.
-    This demonstrates the quick sort algorithm in the code base – the
-    hash table object still exists but is no longer used by this route.
-
-    Matches are treated case-insensitively and require exact name equality
-    (mirroring the behaviour of the original hash-based lookup).  The
-    ``search_results`` list contains ``(index, contact)`` pairs so that
-    the UI can still delete by the contact's position in the main list.
+    Performs a linear scan over contacts to find matches.
+    Matches are treated case-insensitively.
     """
     raw_query = request.args.get('q', '')
     query = raw_query.lower()
 
     search_results = []
     if query:
-        # perform linear scan over linked list
-        for i, c in enumerate(contacts):
-            if c.lower() == query:
-                search_results.append((i, c))
+        # perform linear scan over contacts
+        for i, contact in enumerate(contacts):
+            if contact.name.lower() == query:
+                search_results.append((i, contact))
         # sort the results by contact name using quick sort
         if search_results:
-            search_results = quick_sort(search_results, key=lambda pair: pair[1].lower())
+            search_results = quick_sort(search_results, key=lambda pair: pair[1].name.lower())
 
-    return render_template('search_results.html', 
+    return render_template('search_results.html',
                          query=raw_query,
                          results=search_results,
                          result_count=len(search_results),
@@ -394,24 +598,33 @@ def search():
 @app.route('/delete/<int:idx>', methods=['POST'])
 def delete_contact(idx):
     """
-    Remove a contact from the in-memory list by index and record it for undo.
-    Records the deletion in the undo stack and removes from hash table.
+    Remove a contact from the tree by index and record it for undo.
+    Records the deletion in the undo stack and removes from tree, BST, and VIP queue.
     """
+    global contacts
+
     try:
-        name = contacts[idx]
-        
+        contact = contacts[idx]
+
         # Record the operation for undo
-        operation = ContactOperation('delete', name, idx)
+        operation = ContactOperation('delete', contact)
         undo_stack.push(operation)
-        
+
         # Clear redo queue when new operation is performed
         redo_queue.clear()
-        
-        # Remove from LinkedList
-        contacts.pop(idx)
-        
-        # Remove from hash table
-        contact_hash_table.remove(name)
+
+        # Remove from tree
+        category_tree.remove_contact(contact)
+
+        # Remove from BST (if needed)
+        # Note: BST removal is complex, we'll skip for now
+
+        # Remove from VIP queue if present
+        if contact.priority > 0:
+            vip_queue.remove(contact)
+
+        # Update contacts list
+        contacts = category_tree.get_all_contacts()
     except Exception:
         pass
 
@@ -425,6 +638,8 @@ def undo():
     Undo the last operation (add or delete) using the undo stack.
     Moves the undone operation to the redo queue for potential redo.
     """
+    global contacts
+
     # Prefer form 'next' (from POST), then querystring 'next', otherwise go home
     next_url = request.form.get('next') or request.args.get('next') or url_for('index')
 
@@ -432,26 +647,30 @@ def undo():
         return redirect(next_url)
 
     operation = undo_stack.pop()
-    
+
     if operation.operation_type == 'add':
         # Undo an add: remove the contact
         try:
-            contacts.pop(operation.index)
-            contact_hash_table.remove(operation.name)
+            category_tree.remove_contact(operation.contact)
+            if operation.contact.priority > 0:
+                vip_queue.remove(operation.contact)
+            contacts = category_tree.get_all_contacts()
         except Exception:
             pass
     elif operation.operation_type == 'delete':
         # Undo a delete: restore the contact
         try:
-            insert_at = min(max(0, operation.index), len(contacts))
-            contacts.insert(insert_at, operation.name)
-            contact_hash_table.add(operation.name)
+            category_tree.add_contact(operation.contact)
+            category_bst.insert(tuple(operation.contact.category_path), operation.contact.category_path)
+            if operation.contact.priority > 0:
+                vip_queue.push(operation.contact)
+            contacts = category_tree.get_all_contacts()
         except Exception:
             pass
-    
+
     # Move to redo queue for potential redo
     redo_queue.enqueue(operation)
-    
+
     return redirect(next_url)
 
 
@@ -461,6 +680,8 @@ def redo():
     Redo the last undone operation (add or delete) using the redo queue.
     Moves the redone operation back to the undo stack.
     """
+    global contacts
+
     # Prefer form 'next' (from POST), then querystring 'next', otherwise go home
     next_url = request.form.get('next') or request.args.get('next') or url_for('index')
 
@@ -468,34 +689,56 @@ def redo():
         return redirect(next_url)
 
     operation = redo_queue.dequeue()
-    
+
     if operation.operation_type == 'add':
         # Redo an add: restore the contact
         try:
-            insert_at = min(max(0, operation.index), len(contacts))
-            contacts.insert(insert_at, operation.name)
-            contact_hash_table.add(operation.name)
+            category_tree.add_contact(operation.contact)
+            category_bst.insert(tuple(operation.contact.category_path), operation.contact.category_path)
+            if operation.contact.priority > 0:
+                vip_queue.push(operation.contact)
+            contacts = category_tree.get_all_contacts()
         except Exception:
             pass
     elif operation.operation_type == 'delete':
         # Redo a delete: remove the contact again
         try:
-            contacts.pop(operation.index)
-            contact_hash_table.remove(operation.name)
+            category_tree.remove_contact(operation.contact)
+            if operation.contact.priority > 0:
+                vip_queue.remove(operation.contact)
+            contacts = category_tree.get_all_contacts()
         except Exception:
             pass
-    
+
     # Move back to undo stack
     undo_stack.push(operation)
-    
+
     return redirect(next_url)
 
 
-def get_postgres_connection():
-    pass
+def get_tree_display_data(tree_node, path=[], contacts_list=None):
+    """Get display data for tree visualization."""
+    if contacts_list is None:
+        contacts_list = []
 
-def get_mssql_connection():
-    pass
+    data = []
+    current_path = path + [tree_node.name]
+
+    # Add contacts at this level
+    for contact in tree_node.contacts:
+        contact_index = contacts_list.index(contact) if contact in contacts_list else -1
+        data.append({
+            'path': current_path[1:],  # Skip 'Root'
+            'contact': contact,
+            'level': len(current_path) - 1,
+            'index': contact_index
+        })
+
+    # Recursively add children
+    for child_name, child_node in sorted(tree_node.children.items()):
+        data.extend(get_tree_display_data(child_node, current_path, contacts_list))
+
+    return data
 
 if __name__ == '__main__':
     # Run the Flask app on port 5000, accessible externally

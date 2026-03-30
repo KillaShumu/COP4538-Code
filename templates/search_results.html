@@ -149,10 +149,18 @@
             <div class="results-list">
                 {% for idx, result in results %}
                     <div class="card">
-                        <strong>{{ result }}</strong>
+                        <div style="flex: 1;">
+                            <strong>{{ result.name }}</strong>
+                            <div style="color: #666; font-size: 14px; margin-top: 4px;">
+                                {{ result.get_category_string() }}
+                                {% if result.priority > 0 %}
+                                    | ⭐ Priority: {{ result.priority }}
+                                {% endif %}
+                            </div>
+                        </div>
                         <form action="{{ url_for('delete_contact', idx=idx) }}" method="post">
                             <input type="hidden" name="next" value="{{ url_for('search') }}?q={{ query }}">
-                            <button type="submit" class="btn-danger" onclick="return confirm('Delete {{ result }}?')">
+                            <button type="submit" class="btn-danger" onclick="return confirm('Delete {{ result.name }}?')">
                                 Delete
                             </button>
                         </form>

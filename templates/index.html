@@ -133,29 +133,61 @@
         <h3>➕ Add New Contact</h3>
         <form action="/add" method="POST" class="input-group">
             <input type="text" name="name" placeholder="Contact name..." required>
+            <input type="text" name="category" placeholder="Category (e.g., Work -> Engineering)" style="flex: 2;">
+            <input type="number" name="priority" placeholder="Priority (0-10)" min="0" max="10" value="0" style="width: 100px;">
             <button type="submit" class="btn-success">Add</button>
         </form>
+        <small style="color: #666;">Use "->" to separate category levels (e.g., "Work -> Engineering -> Team A"). Priority > 0 makes it VIP.</small>
     </div>
 
     <hr>
 
-    <!-- Contacts List -->
+    <!-- VIP Contacts Section -->
     <div class="section">
-        <h3>📇 Contacts (LinkedList)</h3>
+        <h3>⭐ VIP Contacts (Priority Queue)</h3>
         <div class="contacts-list">
-            {% for contact in contacts %}
-                <div class="card">
-                    <strong>{{ contact }}</strong>
-                    <form action="{{ url_for('delete_contact', idx=loop.index0) }}" method="post">
+            {% for contact in vip_contacts %}
+                <div class="card" style="border-left: 4px solid gold;">
+                    <strong>{{ contact.name }}</strong>
+                    <div style="color: #666; font-size: 14px;">
+                        {{ contact.get_category_string() }} | Priority: {{ contact.priority }}
+                    </div>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <p>No VIP contacts yet.</p>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Contacts Tree Section -->
+    <div class="section">
+        <h3>🌳 Contacts Tree (Category Organization)</h3>
+        <div class="contacts-list">
+            {% for item in tree_data %}
+                <div class="card" style="margin-left: {{ item.level * 20 }}px; border-left: 4px solid #4CAF50;">
+                    <strong>{{ item.contact.name }}</strong>
+                    <div style="color: #666; font-size: 14px;">
+                        {% if item.path %}
+                            Path: {{ item.path|join(' -> ') }}
+                        {% else %}
+                            Root Level
+                        {% endif %}
+                        {% if item.contact.priority > 0 %}
+                            | ⭐ Priority: {{ item.contact.priority }}
+                        {% endif %}
+                    </div>
+                    <form action="{{ url_for('delete_contact', idx=item.index) }}" method="post" style="margin: 0;">
                         <input type="hidden" name="next" value="{{ url_for('index') }}">
-                        <button type="submit" class="btn-danger" onclick="return confirm('Delete {{ contact }}?')">
+                        <button type="submit" class="btn-danger" onclick="return confirm('Delete {{ item.contact.name }}?')" style="font-size: 12px; padding: 4px 8px;">
                             Delete
                         </button>
                     </form>
                 </div>
             {% else %}
                 <div class="empty-state">
-                    <p>No contacts yet. Add one to get started!</p>
+                    <p>No contacts in tree yet.</p>
                 </div>
             {% endfor %}
         </div>
@@ -165,8 +197,9 @@
     <div class="info-box">
         <h4>📊 Data Structures Used:</h4>
         <ul>
-            <li><strong>Storage:</strong> LinkedList (append: O(1) | search/delete: O(n))</li>
-            <li><strong>Search Index:</strong> Hash Table (ContactHashTable) — O(1) lookup</li>
+            <li><strong>Category Tree:</strong> Tree structure for hierarchical contact organization (Work -> Department -> Team)</li>
+            <li><strong>BST for Categories:</strong> Binary Search Tree for O(log n) category retrieval</li>
+            <li><strong>VIP Priority Queue:</strong> Heap-based priority queue ensuring high-priority contacts appear at top</li>
             <li><strong>Undo:</strong> Stack (LIFO) — stores add/delete operations</li>
             <li><strong>Redo:</strong> Queue (FIFO) — stores undone operations</li>
         </ul>
