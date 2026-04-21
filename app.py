@@ -199,6 +199,21 @@ class PriorityQueue:
         sorted_contacts = sorted(self.heap, key=lambda x: x[0])  # sort by priority (already negative)
         return [contact for _, _, contact in sorted_contacts[:n]]
 
+    def remove(self, contact):
+        """Remove a contact from the priority queue."""
+        self.heap = [item for item in self.heap if item[2] != contact]
+        heapq.heapify(self.heap)
+
+    def remove(self, contact):
+        """Remove a contact from the priority queue."""
+        self.heap = [item for item in self.heap if item[2] != contact]
+        heapq.heapify(self.heap)
+
+    def remove(self, contact):
+        """Remove a contact from the priority queue."""
+        self.heap = [item for item in self.heap if item[2] != contact]
+        heapq.heapify(self.heap)
+
 
 class Stack:
     """A stack data structure (LIFO) for storing undo operations."""
@@ -437,7 +452,7 @@ def find_contact_by_id(contact_id, sorted_contacts):
     
     left = 0
     right = len(sorted_contacts) - 1
-    contact_id_lower = contact_id.lower()
+    contact_id_lower = contact_id.strip().lower()
     
     while left <= right:
         mid = (left + right) // 2
@@ -575,7 +590,7 @@ def search():
     Matches are treated case-insensitively.
     """
     raw_query = request.args.get('q', '')
-    query = raw_query.lower()
+    query = raw_query.strip().lower()
 
     search_results = []
     if query:
