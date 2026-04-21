@@ -581,7 +581,7 @@ def search():
     if query:
         # perform linear scan over contacts
         for i, contact in enumerate(contacts):
-            if contact.name.lower() == query:
+            if query in contact.name.lower():
                 search_results.append((i, contact))
         # sort the results by contact name using quick sort
         if search_results:
