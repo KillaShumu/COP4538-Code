@@ -119,25 +119,25 @@ class BSTNode:
 
 
 class CategoryBST:
-    """Binary Search Tree for fast category retrieval."""
+    """Binary Search Tree for backend category retrieval, not directly wired to the GUI."""
     def __init__(self):
         self.root = None
 
-    def _insert(self, node, key, value):
+    def _insert(self, node, key, contact):
         if node is None:
-            return BSTNode(key, value)
+            return BSTNode(key, [contact])
         if key < node.key:
-            node.left = self._insert(node.left, key, value)
+            node.left = self._insert(node.left, key, contact)
         elif key > node.key:
-            node.right = self._insert(node.right, key, value)
+            node.right = self._insert(node.right, key, contact)
         else:
-            # Update existing
-            node.value = value
+            if contact not in node.value:
+                node.value.append(contact)
         return node
 
-    def insert(self, key, value):
-        """Insert or update a category."""
-        self.root = self._insert(self.root, key, value)
+    def insert(self, key, contact):
+        """Insert a contact into the BST category index."""
+        self.root = self._insert(self.root, key, contact)
 
     def _search(self, node, key):
         if node is None or node.key == key:
@@ -147,9 +147,40 @@ class CategoryBST:
         return self._search(node.right, key)
 
     def search(self, key):
-        """Search for a category."""
+        """Search for a category and return matching contacts."""
         node = self._search(self.root, key)
-        return node.value if node else None
+        return node.value if node else []
+
+    def _find_min(self, node):
+        while node.left:
+            node = node.left
+        return node
+
+    def _delete(self, node, key, contact):
+        if node is None:
+            return None
+        if key < node.key:
+            node.left = self._delete(node.left, key, contact)
+        elif key > node.key:
+            node.right = self._delete(node.right, key, contact)
+        else:
+            if contact in node.value:
+                node.value.remove(contact)
+            if node.value:
+                return node
+            if node.left is None:
+                return node.right
+            if node.right is None:
+                return node.left
+            successor = self._find_min(node.right)
+            node.key = successor.key
+            node.value = successor.value.copy()
+            node.right = self._delete(node.right, successor.key, successor.value[0])
+        return node
+
+    def remove(self, key, contact):
+        """Remove a contact from a category in the BST."""
+        self.root = self._delete(self.root, key, contact)
 
     def get_all_categories(self):
         """Get all category keys in sorted order."""
@@ -474,6 +505,7 @@ def find_contact_by_id(contact_id, sorted_contacts):
 # Initialize data structures
 category_tree = CategoryTree()
 category_bst = CategoryBST()
+contact_hash_table = ContactHashTable()
 vip_queue = PriorityQueue()
 
 # Sample contacts with categories and priorities
@@ -489,7 +521,7 @@ sample_contacts = [
 # Add contacts to tree and BST
 for contact in sample_contacts:
     category_tree.add_contact(contact)
-    category_bst.insert(tuple(contact.category_path), contact.category_path)
+    category_bst.insert(tuple(contact.category_path), contact)
     if contact.priority > 0:
         vip_queue.push(contact)
 
@@ -549,8 +581,8 @@ def add_contact():
         # Add to tree
         category_tree.add_contact(contact)
 
-        # Add to BST
-        category_bst.insert(tuple(category_path), category_path)
+        # Add to BST category index
+        category_bst.insert(tuple(category_path), contact)
 
         # Add to VIP queue if priority > 0
         if priority > 0:
@@ -631,8 +663,8 @@ def delete_contact(idx):
         # Remove from tree
         category_tree.remove_contact(contact)
 
-        # Remove from BST (if needed)
-        # Note: BST removal is complex, we'll skip for now
+        # Remove from BST category index
+        category_bst.remove(tuple(contact.category_path), contact)
 
         # Remove from VIP queue if present
         if contact.priority > 0:
@@ -667,6 +699,7 @@ def undo():
         # Undo an add: remove the contact
         try:
             category_tree.remove_contact(operation.contact)
+            category_bst.remove(tuple(operation.contact.category_path), operation.contact)
             if operation.contact.priority > 0:
                 vip_queue.remove(operation.contact)
             contacts = category_tree.get_all_contacts()
@@ -676,7 +709,7 @@ def undo():
         # Undo a delete: restore the contact
         try:
             category_tree.add_contact(operation.contact)
-            category_bst.insert(tuple(operation.contact.category_path), operation.contact.category_path)
+            category_bst.insert(tuple(operation.contact.category_path), operation.contact)
             if operation.contact.priority > 0:
                 vip_queue.push(operation.contact)
             contacts = category_tree.get_all_contacts()
@@ -709,7 +742,7 @@ def redo():
         # Redo an add: restore the contact
         try:
             category_tree.add_contact(operation.contact)
-            category_bst.insert(tuple(operation.contact.category_path), operation.contact.category_path)
+            category_bst.insert(tuple(operation.contact.category_path), operation.contact)
             if operation.contact.priority > 0:
                 vip_queue.push(operation.contact)
             contacts = category_tree.get_all_contacts()
@@ -719,6 +752,7 @@ def redo():
         # Redo a delete: remove the contact again
         try:
             category_tree.remove_contact(operation.contact)
+            category_bst.remove(tuple(operation.contact.category_path), operation.contact)
             if operation.contact.priority > 0:
                 vip_queue.remove(operation.contact)
             contacts = category_tree.get_all_contacts()
